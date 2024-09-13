@@ -16,7 +16,6 @@ from tqdm import tqdm
 
 # 14.09.2024 Rmse: 9.***
 
-
 def eksik_veri_yonetimi(df):
     """ Gelişmiş yöntemlerle eksik değerleri doldurur. """
     # KNN Imputer veya IterativeImputer kullanabilirsiniz
@@ -105,18 +104,12 @@ def xgboost_with_hyperparameter_tuning(X_train, y_train, gridsearch=False):
     return best_xgb_model
 
 def evaluate_model(model, X_train, y_train):
-    scores = []
-    for train_index, test_index in tqdm(cross_val_score.split(X_train, y_train, cv=10),
-                                        total=10, desc="Çapraz Doğrulama"):
-        X_train_fold, X_test_fold = X_train[train_index], X_train[test_index]
-        y_train_fold, y_test_fold = y_train[train_index], y_train[test_index]
-        model.fit(X_train_fold, y_train_fold)
-        y_pred = model.predict(X_test_fold)
-        scores.append(mean_squared_error(y_test_fold, y_pred, squared=False))  # RMSE hesapla
-
-    rmse_scores = np.array(scores)
+    """ Modeli çapraz doğrulama ile değerlendirir. """
+    scores = cross_val_score(model, X_train, y_train, cv=10, scoring='neg_root_mean_squared_error')
+    rmse_scores = -scores  # Skorları pozitif RMSE değerlerine dönüştür
     print(f'Cross-validation RMSE scores: {rmse_scores}')
     print(f'Mean RMSE: {np.mean(rmse_scores)} +/- {np.std(rmse_scores)}')
+
 def topluluk_modeli(X_train, y_train):
     """ Topluluk modeli oluşturur. """
 
