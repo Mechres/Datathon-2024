@@ -1,6 +1,6 @@
 import pandas as pd
 import numpy as np
-from sklearn.model_selection import train_test_split, GridSearchCV
+from sklearn.model_selection import train_test_split, RandomizedSearchCV
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
 from sklearn.impute import SimpleImputer
 from sklearn.compose import ColumnTransformer
@@ -10,11 +10,11 @@ from sklearn.metrics import mean_squared_error
 from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
 from sklearn.svm import SVR
 
-# Load datasets
-train = pd.read_csv('train.csv')
+# Load datasets (consider using a smaller subset for faster experimentation)
+train = pd.read_csv('train.csv').sample(frac=0.3, random_state=42)  # Use 30% of data
 test = pd.read_csv('test_x.csv')
 
-# Separate target variable and clean it
+# Data preprocessing (same as before)
 y = train['Degerlendirme Puani']
 y = y.fillna(y.mean())
 y = y.replace([np.inf, -np.inf], np.nan).dropna()
@@ -22,7 +22,7 @@ y = y.replace([np.inf, -np.inf], np.nan).dropna()
 X = train.drop(['Degerlendirme Puani', 'id'], axis=1)
 X = X.loc[y.index]
 
-# Transform date columns
+# Transform date columns (same as before)
 date_columns = ['Dogum Tarihi']
 for col in date_columns:
     X[col] = pd.to_datetime(X[col], errors='coerce')
@@ -37,15 +37,13 @@ for col in date_columns:
     test[f'{col}_weekday'] = test[col].dt.weekday
     test = test.drop(col, axis=1)
 
-# Update categorical and numerical columns
 categorical_columns = X.select_dtypes(include=['object']).columns
 numeric_columns = X.select_dtypes(include=['int64', 'float64']).columns
 
-# Convert categorical columns to 'str' type
 X[categorical_columns] = X[categorical_columns].astype(str)
 test[categorical_columns] = test[categorical_columns].astype(str)
 
-# Create data preprocessing pipeline
+# Create data preprocessing pipeline (same as before)
 numeric_transformer = Pipeline(steps=[
     ('imputer', SimpleImputer(strategy='median')),
     ('scaler', StandardScaler())
@@ -62,18 +60,18 @@ preprocessor = ColumnTransformer(
         ('cat', categorical_transformer, categorical_columns)
     ])
 
-# Split the data into training and validation sets
+# Split the data
 X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2, random_state=42)
 
-# Available models
+# Available models with early stopping where applicable
 models = {
-    "1": ("XGBoost", XGBRegressor(random_state=42, tree_method='hist', n_jobs=-1)),
+    "1": ("XGBoost", XGBRegressor(random_state=42, tree_method='hist', n_jobs=-1, early_stopping_rounds=10)),
     "2": ("Random Forest", RandomForestRegressor(random_state=42, n_jobs=-1)),
     "3": ("Gradient Boosting", GradientBoostingRegressor(random_state=42)),
     "4": ("SVR", SVR())
 }
 
-# Get model selection from user
+# User model selection (same as before)
 print("Available Models:")
 for key, value in models.items():
     print(f"{key}: {value[0]}")
@@ -98,46 +96,50 @@ for model_num in selected_models:
         ('regressor', regressor)
     ])
 
-    # Custom hyperparameter grid for each model
+    # Simplified parameter grids
     if model_name == "XGBoost":
-        param_grid = {
+        param_distributions = {
             'regressor__n_estimators': [100, 200],
             'regressor__learning_rate': [0.01, 0.1],
             'regressor__max_depth': [3, 5]
         }
     elif model_name == "Random Forest":
-        param_grid = {
+        param_distributions = {
             'regressor__n_estimators': [100, 200],
-            'regressor__max_depth': [5, 10],
-            'regressor__min_samples_split': [2, 5]
+            'regressor__max_depth': [5, 10]
         }
     elif model_name == "Gradient Boosting":
-        param_grid = {
+        param_distributions = {
             'regressor__n_estimators': [100, 200],
-            'regressor__learning_rate': [0.01, 0.1],
-            'regressor__max_depth': [3, 5]
+            'regressor__learning_rate': [0.01, 0.1]
         }
     elif model_name == "SVR":
-        param_grid = {
+        param_distributions = {
             'regressor__C': [0.1, 1, 10],
-            'regressor__kernel': ['rbf', 'linear'],
-            'regressor__gamma': ['scale', 'auto']
+            'regressor__kernel': ['rbf', 'linear']
         }
 
-    # GridSearchCV settings
-    grid_search = GridSearchCV(model, param_grid, cv=3, scoring='neg_mean_squared_error', n_jobs=-1)
+    # RandomizedSearchCV settings
+    random_search = RandomizedSearchCV(
+        model,
+        param_distributions=param_distributions,
+        n_iter=5,  # Reduced number of iterations
+        cv=3,  # Reduced number of folds
+        scoring='neg_mean_squared_error',
+        n_jobs=-1
+    )
 
     # Training and evaluation
     print(f"\nModel: {model_name}")
     print("Training started...")
-    grid_search.fit(X_train, y_train)
+    random_search.fit(X_train, y_train)
     print("Training completed.")
 
-    print("Best parameters:", grid_search.best_params_)
-    print("Best cross-validation score:", -grid_search.best_score_)
+    print("Best parameters:", random_search.best_params_)
+    print("Best cross-validation score:", -random_search.best_score_)
 
     # Make predictions using the best model
-    best_model = grid_search.best_estimator_
+    best_model = random_search.best_estimator_
 
     # Performance evaluation on validation set
     val_predictions = best_model.predict(X_val)
