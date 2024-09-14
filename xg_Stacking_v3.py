@@ -1,7 +1,7 @@
 import pandas as pd
 import numpy as np
-from sklearn.model_selection import train_test_split, RandomizedSearchCV, KFold, cross_val_score
-from sklearn.preprocessing import OneHotEncoder, StandardScaler, RobustScaler
+from sklearn.model_selection import train_test_split, RandomizedSearchCV, cross_val_score
+from sklearn.preprocessing import OneHotEncoder, RobustScaler
 from sklearn.impute import SimpleImputer
 from sklearn.compose import ColumnTransformer
 from sklearn.pipeline import Pipeline
@@ -9,10 +9,12 @@ from xgboost import XGBRegressor
 from sklearn.metrics import mean_squared_error
 from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor, StackingRegressor, ExtraTreesRegressor
 from sklearn.svm import SVR
-from sklearn.linear_model import LinearRegression, Ridge, Lasso, ElasticNet
+from sklearn.linear_model import Ridge
 from catboost import CatBoostRegressor
 from lightgbm import LGBMRegressor
 import time
+from tqdm import tqdm
+
 
 # Load datasets
 train = pd.read_csv('train.csv')
@@ -36,8 +38,6 @@ for col in date_columns:
         df[col] = pd.to_datetime(df[col], errors='coerce')
         df[f'{col}_year'] = df[col].dt.year
         df[f'{col}_month'] = df[col].dt.month
-        df[f'{col}_weekday'] = df[col].dt.weekday
-        df[f'{col}_quarter'] = df[col].dt.quarter
         df.drop(col, axis=1, inplace=True)
 
 # Preprocessing: Categorical & Numeric columns
@@ -72,8 +72,9 @@ models = {
     "4": ("SVR", SVR()),
     "5": ("CatBoost", CatBoostRegressor(random_state=42, verbose=0)),
     "6": ("LightGBM", LGBMRegressor(random_state=42, n_jobs=-1)),
-    "7": ("Extra Trees", ExtraTreesRegressor(random_state=42, n_jobs=-1)),
+    "7": ("Extra Trees", ExtraTreesRegressor(random_state=42, n_jobs=-1))
 }
+
 
 # User model selection
 print("Available Models:")
@@ -86,6 +87,9 @@ if selected_models.lower() == "all":
     selected_models = list(models.keys())
 else:
     selected_models = selected_models.split(",")
+
+# Quick run option
+quick_run = input("Do you want to do a quick run with minimal hyperparameter tuning? (yes/no): ").lower() == 'yes'
 
 # Function to create base models
 def create_base_models(models_dict, selected_models):
@@ -108,57 +112,45 @@ base_models = create_base_models(models, selected_models)
 # Hyperparameter grids
 param_distributions = {
     "XGBoost": {
-        'regressor__n_estimators': [100, 200, 300, 500],
-        'regressor__max_depth': [3, 5, 7, 9],
-        'regressor__learning_rate': [0.01, 0.05, 0.1, 0.2],
-        'regressor__subsample': [0.8, 0.9, 1.0],
-        'regressor__colsample_bytree': [0.8, 0.9, 1.0],
+        'regressor__n_estimators': [100, 200] if quick_run else [100, 200, 300],
+        'regressor__max_depth': [3, 5] if quick_run else [3, 5, 7],
+        'regressor__learning_rate': [0.1, 0.2] if quick_run else [0.01, 0.1, 0.2],
     },
     "Random Forest": {
-        'regressor__n_estimators': [100, 200, 300, 500],
-        'regressor__max_depth': [5, 10, 15, 20, None],
-        'regressor__min_samples_split': [2, 5, 10],
-        'regressor__min_samples_leaf': [1, 2, 4],
+        'regressor__n_estimators': [100, 200] if quick_run else [100, 200, 300],
+        'regressor__max_depth': [5, 10] if quick_run else [5, 10, None],
     },
     "Gradient Boosting": {
-        'regressor__n_estimators': [100, 200, 300, 500],
-        'regressor__max_depth': [3, 5, 7, 9],
-        'regressor__learning_rate': [0.01, 0.05, 0.1, 0.2],
-        'regressor__subsample': [0.8, 0.9, 1.0],
+        'regressor__n_estimators': [100, 200] if quick_run else [100, 200, 300],
+        'regressor__max_depth': [3, 5] if quick_run else [3, 5, 7],
+        'regressor__learning_rate': [0.1, 0.2] if quick_run else [0.01, 0.1, 0.2],
     },
     "SVR": {
-        'regressor__C': [0.1, 1, 10, 100],
-        'regressor__kernel': ['rbf', 'linear', 'poly'],
-        'regressor__gamma': ['scale', 'auto'] + [0.01, 0.1, 1],
+        'regressor__C': [1, 10] if quick_run else [0.1, 1, 10],
+        'regressor__kernel': ['rbf', 'linear'] if quick_run else ['rbf', 'linear', 'poly'],
     },
     "CatBoost": {
-        'regressor__iterations': [100, 200, 300, 500],
-        'regressor__depth': [4, 6, 8, 10],
-        'regressor__learning_rate': [0.01, 0.05, 0.1, 0.2],
-        'regressor__l2_leaf_reg': [1, 3, 5, 7],
+        'regressor__iterations': [100, 200] if quick_run else [100, 200, 300],
+        'regressor__depth': [4, 6] if quick_run else [4, 6, 8],
+        'regressor__learning_rate': [0.1, 0.2] if quick_run else [0.01, 0.1, 0.2],
     },
     "LightGBM": {
-        'regressor__n_estimators': [100, 200, 300, 500],
-        'regressor__max_depth': [3, 5, 7, 9],
-        'regressor__learning_rate': [0.01, 0.05, 0.1, 0.2],
-        'regressor__subsample': [0.8, 0.9, 1.0],
-        'regressor__colsample_bytree': [0.8, 0.9, 1.0],
+        'regressor__n_estimators': [100, 200] if quick_run else [100, 200, 300],
+        'regressor__max_depth': [3, 5] if quick_run else [3, 5, 7],
+        'regressor__learning_rate': [0.1, 0.2] if quick_run else [0.01, 0.1, 0.2],
     },
     "Extra Trees": {
-        'regressor__n_estimators': [100, 200, 300, 500],
-        'regressor__max_depth': [5, 10, 15, 20, None],
-        'regressor__min_samples_split': [2, 5, 10],
-        'regressor__min_samples_leaf': [1, 2, 4],
-    },
+        'regressor__n_estimators': [100, 200] if quick_run else [100, 200, 300],
+        'regressor__max_depth': [5, 10] if quick_run else [5, 10, None],
+    }
 }
-
 # Split data
 X_train, X_val, y_train, y_val = train_test_split(X, y_scaled, test_size=0.2, random_state=42)
 
 # Function for model training and evaluation
 def train_and_evaluate(model, param_dist, X_train, y_train, X_val, y_val):
-    n_iter = 20
-    cv = 5
+    n_iter = 5 if quick_run else 10
+    cv = 3 if quick_run else 5
     start_time = time.time()
 
     random_search = RandomizedSearchCV(
@@ -187,7 +179,7 @@ def train_and_evaluate(model, param_dist, X_train, y_train, X_val, y_val):
 
 # Train and evaluate base models
 tuned_base_models = []
-for model_name, model in base_models:
+for model_name, model in tqdm(base_models, desc="Training models"):
     print(f"\nModel: {model_name}")
     tuned_model = train_and_evaluate(model, param_distributions[model_name], X_train, y_train, X_val, y_val)
     tuned_base_models.append((model_name, tuned_model))
@@ -197,14 +189,15 @@ meta_learner = Ridge()
 stacking_regressor = StackingRegressor(
     estimators=tuned_base_models,
     final_estimator=meta_learner,
-    cv=5
+    cv=3 if quick_run else 5
 )
 
 # Train the stacking regressor
+print("\nTraining Stacking Regressor...")
 start_time = time.time()
 stacking_regressor.fit(X_train, y_train)
 end_time = time.time()
-print(f"\nStacking Regressor Training time: {end_time - start_time:.2f} seconds")
+print(f"Stacking Regressor Training time: {end_time - start_time:.2f} seconds")
 
 # Performance on validation set
 val_predictions = stacking_regressor.predict(X_val)
@@ -213,24 +206,13 @@ rmse = np.sqrt(mse)
 print(f"Stacking Regressor Validation RMSE: {rmse}")
 
 # Cross-validation for more robust evaluation
-cv_scores = cross_val_score(stacking_regressor, X, y_scaled, cv=5, scoring='neg_mean_squared_error')
+print("Performing cross-validation...")
+cv_scores = cross_val_score(stacking_regressor, X, y_scaled, cv=3 if quick_run else 5, scoring='neg_mean_squared_error')
 cv_rmse = np.sqrt(-cv_scores)
 print(f"Cross-validation RMSE: {cv_rmse.mean()} (+/- {cv_rmse.std() * 2})")
 
-# Feature importance analysis (using Random Forest as an example)
-rf_model = next((model for name, model in tuned_base_models if name == "Random Forest"), None)
-if rf_model:
-    feature_importance = rf_model.named_steps['regressor'].feature_importances_
-    feature_names = rf_model.named_steps['preprocessor'].get_feature_names_out()
-
-    feature_importance_df = pd.DataFrame({'feature': feature_names, 'importance': feature_importance})
-    feature_importance_df = feature_importance_df.sort_values('importance', ascending=False).head(20)
-    print("\nTop 20 Important Features:")
-    print(feature_importance_df)
-else:
-    print("\nRandom Forest model not selected, skipping feature importance analysis.")
-
 # Predictions on test set
+print("Generating predictions on test set...")
 test_predictions = stacking_regressor.predict(test.drop('id', axis=1))
 test_predictions_original_scale = target_scaler.inverse_transform(test_predictions.reshape(-1, 1)).ravel()
 
