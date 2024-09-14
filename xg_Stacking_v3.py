@@ -209,7 +209,21 @@ print(f"Stacking Regressor Validation RMSE: {rmse}")
 print("Performing cross-validation...")
 cv_scores = cross_val_score(stacking_regressor, X, y_scaled, cv=3 if quick_run else 5, scoring='neg_mean_squared_error')
 cv_rmse = np.sqrt(-cv_scores)
-print(f"Cross-validation RMSE: {cv_rmse.mean()} (+/- {cv_rmse.std() * 2})")
+print(f"Cross-validation RMSE (scaled): {cv_rmse.mean()} (+/- {cv_rmse.std() * 2})")
+
+
+# Calculate and print the unscaled RMSE
+cv_rmse_unscaled = target_scaler.inverse_transform(cv_rmse.reshape(-1, 1)).ravel()
+print(f"Cross-validation RMSE (unscaled): {cv_rmse_unscaled.mean()} (+/- {cv_rmse_unscaled.std() * 2})")
+
+
+# For the validation set prediction
+val_predictions = stacking_regressor.predict(X_val)
+val_predictions_unscaled = target_scaler.inverse_transform(val_predictions.reshape(-1, 1)).ravel()
+y_val_unscaled = target_scaler.inverse_transform(y_val.reshape(-1, 1)).ravel()
+mse = mean_squared_error(y_val_unscaled, val_predictions_unscaled)
+rmse = np.sqrt(mse)
+print(f"Validation RMSE (unscaled): {rmse}")
 
 # Predictions on test set
 print("Generating predictions on test set...")
