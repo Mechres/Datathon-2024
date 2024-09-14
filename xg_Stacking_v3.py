@@ -55,7 +55,7 @@ numeric_transformer = Pipeline(steps=[
 
 categorical_transformer = Pipeline(steps=[
     ('imputer', SimpleImputer(strategy='constant', fill_value='missing')),
-    ('onehot', OneHotEncoder(handle_unknown='ignore', sparse=False))
+    ('onehot', OneHotEncoder(handle_unknown='ignore'))
 ])
 
 preprocessor = ColumnTransformer(
@@ -75,22 +75,35 @@ models = {
     "7": ("Extra Trees", ExtraTreesRegressor(random_state=42, n_jobs=-1)),
 }
 
-# Use all models
-selected_models = list(models.keys())
+# User model selection
+print("Available Models:")
+for key, value in models.items():
+    print(f"{key}: {value[0]}")
+
+selected_models = input("Please enter the numbers of the models you want to use, separated by commas (or type 'all'): ")
+
+if selected_models.lower() == "all":
+    selected_models = list(models.keys())
+else:
+    selected_models = selected_models.split(",")
 
 # Function to create base models
-def create_base_models(models_dict):
+def create_base_models(models_dict, selected_models):
     base_models = []
-    for model_num, (model_name, regressor) in models_dict.items():
-        model = Pipeline([
-            ('preprocessor', preprocessor),
-            ('regressor', regressor)
-        ])
-        base_models.append((model_name, model))
+    for model_num in selected_models:
+        if model_num in models_dict:
+            model_name, regressor = models_dict[model_num]
+            model = Pipeline([
+                ('preprocessor', preprocessor),
+                ('regressor', regressor)
+            ])
+            base_models.append((model_name, model))
+        else:
+            print(f"Invalid model number: {model_num}, skipping.")
     return base_models
 
 # Create base models
-base_models = create_base_models(models)
+base_models = create_base_models(models, selected_models)
 
 # Hyperparameter grids
 param_distributions = {
@@ -205,14 +218,17 @@ cv_rmse = np.sqrt(-cv_scores)
 print(f"Cross-validation RMSE: {cv_rmse.mean()} (+/- {cv_rmse.std() * 2})")
 
 # Feature importance analysis (using Random Forest as an example)
-rf_model = [model for name, model in tuned_base_models if name == "Random Forest"][0]
-feature_importance = rf_model.named_steps['regressor'].feature_importances_
-feature_names = rf_model.named_steps['preprocessor'].get_feature_names_out()
+rf_model = next((model for name, model in tuned_base_models if name == "Random Forest"), None)
+if rf_model:
+    feature_importance = rf_model.named_steps['regressor'].feature_importances_
+    feature_names = rf_model.named_steps['preprocessor'].get_feature_names_out()
 
-feature_importance_df = pd.DataFrame({'feature': feature_names, 'importance': feature_importance})
-feature_importance_df = feature_importance_df.sort_values('importance', ascending=False).head(20)
-print("\nTop 20 Important Features:")
-print(feature_importance_df)
+    feature_importance_df = pd.DataFrame({'feature': feature_names, 'importance': feature_importance})
+    feature_importance_df = feature_importance_df.sort_values('importance', ascending=False).head(20)
+    print("\nTop 20 Important Features:")
+    print(feature_importance_df)
+else:
+    print("\nRandom Forest model not selected, skipping feature importance analysis.")
 
 # Predictions on test set
 test_predictions = stacking_regressor.predict(test.drop('id', axis=1))
