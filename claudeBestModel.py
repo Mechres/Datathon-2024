@@ -3,10 +3,10 @@ import numpy as np
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.preprocessing import LabelEncoder
 from sklearn.impute import SimpleImputer
-from sklearn.metrics import mean_squared_error, r2_score
-import matplotlib.pyplot as plt
+from sklearn.metrics import mean_squared_error
 from xgboost import XGBRegressor
 from catboost import CatBoostRegressor
+from sklearn.model_selection import train_test_split
 
 # Veri setlerini yükle
 print("Veri setleri yükleniyor...")
@@ -45,66 +45,51 @@ train_df = combined_df[combined_df['is_train'] == 1].drop('is_train', axis=1)
 test_df = combined_df[combined_df['is_train'] == 0].drop(['is_train', 'Degerlendirme Puani'], axis=1)
 
 # Özellikleri ve hedef değişkeni ayır
-X_train = train_df.drop(['Degerlendirme Puani', 'id', 'Dogum Tarihi'], axis=1)
-y_train = train_df['Degerlendirme Puani']
+X_train_full = train_df.drop(['Degerlendirme Puani', 'id', 'Dogum Tarihi'], axis=1)
+y_train_full = train_df['Degerlendirme Puani']
 X_test = test_df.drop(['id', 'Dogum Tarihi'], axis=1)
 
 # NaN değerleri kontrol et ve raporla
 print("NaN değerler kontrol ediliyor...")
 print("Eğitim verisinde NaN değerler:")
-print(X_train.isna().sum())
+print(X_train_full.isna().sum())
 print("\nHedef değişkende NaN değerler:")
-print(y_train.isna().sum())
+print(y_train_full.isna().sum())
 
 # NaN değerleri olan satırları kaldır (eğer hala varsa)
-mask = ~np.isnan(y_train)
-X_train = X_train[mask]
-y_train = y_train[mask]
+mask = ~np.isnan(y_train_full)
+X_train_full = X_train_full[mask]
+y_train_full = y_train_full[mask]
 
-# MODELLERİ EĞİT VE KARŞILAŞTIR
+# Eğitim setini train/test olarak ayır (gerçek test seti olmadığı için)
+X_train, X_val, y_train, y_val = train_test_split(X_train_full, y_train_full, test_size=0.2, random_state=42)
+
+# MODELLERİ EĞİT VE TEST ET
 # 1. Random Forest
 print("Random Forest modeli eğitiliyor...")
 rf_model = RandomForestRegressor(n_estimators=100, random_state=42)
 rf_model.fit(X_train, y_train)
-rf_pred_train = rf_model.predict(X_train)
-rf_pred_test = rf_model.predict(X_test)
+rf_pred = rf_model.predict(X_val)
+rf_rmse = np.sqrt(mean_squared_error(y_val, rf_pred))
+print(f"Random Forest RMSE: {rf_rmse:.4f}")
 
 # 2. XGBoost
 print("XGBoost modeli eğitiliyor...")
 xgb_model = XGBRegressor(n_estimators=100, random_state=42)
 xgb_model.fit(X_train, y_train)
-xgb_pred_train = xgb_model.predict(X_train)
-xgb_pred_test = xgb_model.predict(X_test)
+xgb_pred = xgb_model.predict(X_val)
+xgb_rmse = np.sqrt(mean_squared_error(y_val, xgb_pred))
+print(f"XGBoost RMSE: {xgb_rmse:.4f}")
 
 # 3. CatBoost
 print("CatBoost modeli eğitiliyor...")
 catboost_model = CatBoostRegressor(iterations=100, random_seed=42, verbose=0)
 catboost_model.fit(X_train, y_train)
-catboost_pred_train = catboost_model.predict(X_train)
-catboost_pred_test = catboost_model.predict(X_test)
+catboost_pred = catboost_model.predict(X_val)
+catboost_rmse = np.sqrt(mean_squared_error(y_val, catboost_pred))
+print(f"CatBoost RMSE: {catboost_rmse:.4f}")
 
-# Performans karşılaştırması (eğitim setinde)
-def evaluate_model(y_true, y_pred):
-    mse = mean_squared_error(y_true, y_pred)
-    rmse = np.sqrt(mse)
-    r2 = r2_score(y_true, y_pred)
-    return mse, rmse, r2
-
-print("\nModel Sonuçları (Eğitim Seti):")
-
-# Random Forest sonuçları
-rf_mse, rf_rmse, rf_r2 = evaluate_model(y_train, rf_pred_train)
-print(f"Random Forest -> MSE: {rf_mse}, RMSE: {rf_rmse}, R²: {rf_r2}")
-
-# XGBoost sonuçları
-xgb_mse, xgb_rmse, xgb_r2 = evaluate_model(y_train, xgb_pred_train)
-print(f"XGBoost -> MSE: {xgb_mse}, RMSE: {xgb_rmse}, R²: {xgb_r2}")
-
-# CatBoost sonuçları
-catboost_mse, catboost_rmse, catboost_r2 = evaluate_model(y_train, catboost_pred_train)
-print(f"CatBoost -> MSE: {catboost_mse}, RMSE: {catboost_rmse}, R²: {catboost_r2}")
-
-# Tahminleri farklı dosyalara kaydet
+# Test seti ile tahmin yap ve dosyaya kaydet
 def save_predictions(model_name, predictions):
     output_df = test_df.copy()
     output_df['Degerlendirme Puani'] = predictions
@@ -114,6 +99,11 @@ def save_predictions(model_name, predictions):
     print(f"Tahminler '{output_file}' dosyasına kaydedildi.")
 
 # Her modelin sonuçlarını kaydet
+rf_pred_test = rf_model.predict(X_test)
 save_predictions('random_forest', rf_pred_test)
+
+xgb_pred_test = xgb_model.predict(X_test)
 save_predictions('xgboost', xgb_pred_test)
+
+catboost_pred_test = catboost_model.predict(X_test)
 save_predictions('catboost', catboost_pred_test)
